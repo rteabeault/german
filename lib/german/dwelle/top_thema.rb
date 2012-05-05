@@ -2,16 +2,6 @@ require 'nokogiri'
 require 'open-uri'
 require 'fileutils'
 
-class Page
-  def initialize(url)
-    @url = url
-  end
-
-  def page
-    @page ||= Nokogiri::HTML(open(@url))
-  end
-end
-
 module HasArchivePages
   def archive_pages
     @archive_pages ||= page.search("a//[text()*='Archiv']").collect do |link|
@@ -43,6 +33,38 @@ module HasArticlePages
   end
 end
 
+module HasFiles
+  def download_file(url_method, file_path)
+    unless File.exist? file_path
+      url = send(url_method)
+      if url
+        Dwelle::HTTP.download(url, file_path)
+      else
+        puts "MISSING url for #{file_path}"
+      end    
+    end
+  end
+end
+
+class Page
+  def initialize(url)
+    @url = url
+  end
+
+  def page
+    @page ||= Nokogiri::HTML(open(@url))
+  end
+
+  def find_href(query)
+    href = page.at(query)
+    if href
+      href['href']
+    else
+      nil
+    end
+  end
+end
+
 class VideoThemaPage < Page
   include HasArchivePages
 
@@ -57,6 +79,7 @@ end
 
 class TopThemaPage < Page
   include HasArchivePages
+
   def initialize
     super "http://www.dw.de/dw/0,,8031,00.html"
   end
@@ -93,6 +116,7 @@ class VideoThemaArchivePage < Page
 end
 
 class TopThemaArticle < Page
+  include HasFiles
   
   def initialize(url, title)
     @url = url
@@ -103,48 +127,47 @@ class TopThemaArticle < Page
     article_path = File.join(to_path, @title)
     FileUtils.mkdir_p article_path, :verbose => false
 
-    mp3_file_path = File.join(article_path, mp3_file_name)
-    Dwelle::HTTP.download(mp3_url, mp3_file_path) unless File.exist? mp3_file_path
-
-    pdf_file_path = File.join(article_path, pdf_manuscript_file_name)
-    Dwelle::HTTP.download(pdf_url, pdf_file_path) unless File.exist? pdf_file_path
+    download_file(:mp3_url, File.join(article_path, mp3_file_name))
+    download_file(:pdf_url, File.join(article_path, pdf_manuscript_file_name))
 
     text_manuscript_file_path = File.join(article_path, text_manuscript_file_name)
     save_article_text(manuscript_text, text_manuscript_file_path) unless File.exist? text_manuscript_file_path
   end
-  
-  private 
+
+  def page
+    @page ||= lambda {
+      page = Nokogiri::HTML(open(@url))
+      alternative_link = page.at_xpath("//a/h2[contains(text(), 'Deutsch lernen mit DW-WORLD')]/..")
+      page = Nokogiri::HTML(open(alternative_link['href'])) if alternative_link
+      page
+    }.call
+  end
 
   def save_article_text(text, dest_file)
     File.open(dest_file, 'wb') { |f| f << text }
   end
 
-  def page
-    @page ||= Nokogiri::HTML(open(@url))
-  end
-
   def pdf_url
-    @pdf_url ||= "http://www.dw.de#{pdf_uri}"
+    uri = find_href("a[href$='.pdf']")
+    return nill unless uri
+    "http://www.dw.de#{uri}"
   end
 
   def mp3_url
-    @mp3_url ||= mp3_popup_page.at_css("a[href$='.mp3']")['href']
+    mp3_popup_page.find_href("a[href$='.mp3']")
   end
 
   def manuscript_text
     @manuscript_text ||= page.css("div[class='longText']").text.squeeze(" ").squeeze("\n")
   end
 
-  def pdf_uri
-    @pdf_uri ||= page.at_css("a[href$='.pdf']")['href']
-  end
-
   def mp3_popup_link
-    @mp3_popup_link ||= page.at_xpath("//a/h2[contains(text(), 'als MP3')]/..")
+    find_href("//a/h2[contains(text(), 'MP3')]/..")
   end
 
   def mp3_popup_page
-    @mp3_popup_page ||= Nokogiri::HTML(open("http://www.dw.de#{mp3_popup_link['href']}"))
+    return nil unless mp3_popup_link
+    @mp3_popup_page ||= Page.new("http://www.dw.de#{mp3_popup_link}")
   end
 
   def mp3_file_name
@@ -161,6 +184,7 @@ class TopThemaArticle < Page
 end
 
 class VideoThemaArticle < Page
+  include HasFiles
   
   def initialize(url, title)
     @url = url
@@ -168,47 +192,39 @@ class VideoThemaArticle < Page
   end
 
   def download(to_path)
+    puts "Checking #{@title}"
     article_path = File.join(to_path, @title)
     FileUtils.mkdir_p article_path, :verbose => false
 
-    # mp4_file_path = File.join(article_path, mp4_file_name)
-    # Dwelle::HTTP.download(mp4_url, mp4_file_path) unless File.exist? mp4_file_path
-
-    pdf_manuscript_file_path = File.join(article_path, pdf_manuscript_file_name)
-    Dwelle::HTTP.download(pdf_manuscript_url, pdf_manuscript_file_path) unless File.exist? pdf_manuscript_file_path
-
-    pdf_aufgaben_file_path = File.join(article_path, pdf_aufgaben_file_name)
-    Dwelle::HTTP.download(pdf_aufgaben_url, pdf_aufgaben_file_path) unless File.exist? pdf_aufgaben_file_path
+    download_file(:mp4_url, File.join(article_path, mp4_file_name))
+    download_file(:pdf_manuscript_url, File.join(article_path, pdf_manuscript_file_name))
+    download_file(:pdf_aufgaben_url, File.join(article_path, pdf_aufgaben_file_name))
   end
   
-  private 
-
   def pdf_manuscript_url
-    @pdf_manuscript_url ||= "http://www.dw.de#{pdf_manuscript_uri}"
-  end
-
-  def pdf_manuscript_uri
-    @pdf_manuscript_uri ||= page.at_xpath("//a/h2[contains(text(), 'Manuskript und Glossar zum Ausdrucken (PDF)')]/..")['href']
+    uri = find_href("//a/h2[contains(text(), 'Manuskript und Glossar zum Ausdrucken (PDF)')]/..")
+    return nil unless uri
+    "http://www.dw.de#{uri}"
   end
 
   def pdf_aufgaben_url
-    @pdf_aufgaben_url ||= "http://www.dw.de#{pdf_aufgaben_uri}"
-  end
-
-  def pdf_aufgaben_uri
-    @pdf_aufgaben_uri ||= page.at_xpath("//a/h2[contains(text(), 'Die Aufgaben zum Ausdrucken (PDF)')]/..")['href']
+    uri = find_href("//a/h2[contains(text(), 'Die Aufgaben zum Ausdrucken (PDF)')]/..")
+    return nil unless uri
+    "http://www.dw.de#{uri}"
   end
 
   def mp4_url
-    @mp4_url ||= mp4_popup_page.at_css("a[href$='.mp4']")['href']
+    return nil unless mp4_popup_page
+    mp4_popup_page.find_href("a[href$='.mp4']")
   end
 
   def mp4_popup_link
-    @mp4_popup_link ||= page.at_xpath("//a/h2[contains(text(), 'als MP4')]/..")
+    find_href("//a/h2[contains(text(), 'MP4')]/..")
   end
 
   def mp4_popup_page
-    @mp4_popup_page ||= Nokogiri::HTML(open("http://www.dw.de#{mp4_popup_link['href']}"))
+    return nil unless mp4_popup_link
+    @mp4_popup_page ||= Page.new("http://www.dw.de#{mp4_popup_link}")
   end
 
   def mp4_file_name
