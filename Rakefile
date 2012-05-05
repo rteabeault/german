@@ -15,3 +15,8 @@ task :video_thema do
   video_thema = VideoThemaPage.new
   video_thema.download(root_folder)
 end
+
+task :deutsch_interaktiv do
+  deutsch_interaktiv = DeutschInteraktiv.new
+  deutsch_interaktiv.fetch_words
+end
