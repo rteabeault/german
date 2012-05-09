@@ -16,7 +16,10 @@ task :video_thema do
   video_thema.download(root_folder)
 end
 
+desc "Create tab separated file of vocabulary from basic-german-vocabulary.info"
 task :deutsch_interaktiv do
-  deutsch_interaktiv = DeutschInteraktiv.new
-  deutsch_interaktiv.fetch_words
+  lesson_range = 23..23
+  fetcher = BasicGermanVocabularyDotInfo::WordFetcher.new
+  fetcher.write_sentences_csv(lesson_range)
+  fetcher.download_audio(lesson_range)
 end
