@@ -18,8 +18,16 @@ end
 
 desc "Create tab separated file of vocabulary from basic-german-vocabulary.info"
 task :deutsch_interaktiv do
-  lesson_range = 23..23
+  lesson_range = 1..45
   fetcher = BasicGermanVocabularyDotInfo::WordFetcher.new
   fetcher.write_sentences_csv(lesson_range)
+  fetcher.write_nouns_csv(lesson_range)
+  fetcher.write_verbs_csv(lesson_range)
   fetcher.download_audio(lesson_range)
+end
+
+desc "Reformat old Langenscheidt's Basic German Vocabulary to new Anki format"
+task :bgv do
+  csv = File.join("Langenscheidt", "Langenscheidt.csv")
+  bgv = Langenscheidt.new(csv)
 end

@@ -21,7 +21,7 @@ module BasicGermanVocabularyDotInfo
               word.as_html, 
               word.translation, 
               "[sound:#{word.audio}.mp3]", 
-              "#{lesson.name} #{exercise.name}"
+              "#{lesson.name}"
             ].join("\t")
           end
         end
@@ -34,17 +34,31 @@ module BasicGermanVocabularyDotInfo
           next unless word.kind_of? Noun
           file.puts [
             word.gender,
-            word.base_word_as_html,
+            word.base_word,
             word.plural,
             word.translation, 
             "[sound:#{word.audio}.mp3]", 
-            "#{lesson.name} #{exercise.name}"
+            "#{lesson.name}"
           ].join("\t") 
         end
       end
     end
 
     def write_verbs_csv(lesson_range)
+      File.open(File.join(ROOT_DIR, 'verbs.csv'), 'w') do |file|
+        process_words(lesson_range) do |lesson, exercise, word|
+          next unless word.kind_of? Verb
+          file.puts [
+            word.infinitive,
+            word.third_per_sing_present,
+            word.third_per_sing_past,
+            word.auxiliary,
+            word.past_participle, 
+            "[sound:#{word.audio}.mp3]", 
+            "#{lesson.name}"
+          ].join("\t") 
+        end
+      end
     end
 
     def download_audio(lesson_range)
@@ -141,27 +155,34 @@ module BasicGermanVocabularyDotInfo
   end
 
   class Noun < Word
-    attr_reader :gender, :plural
+    attr_reader :gender, :plural, :base_word
 
     def initialize(word_html)
       super(word_html)
-
-      @gender = as_text.split(" ")[0]
-      @plural = (as_text.split(",")[1] || "").strip
+      as_text =~ /(der|die|das)\s([^,]*)((,\s(.*))|$)/
+      @gender = $1
+      @base_word = $2
+      @plural = $5 || ""
     end
   end
 
   class Verb < Word
-    attr_reader :infinitive
+    attr_reader :infinitive, :third_per_sing_present, :third_per_sing_past, :auxiliary, :past_participle
 
     def initialize(html)
       super(html)
       verb_parts = html.search("//dl//dt//span[@class='tr']").children[1]
+      verb_parts.text =~ /\((.*),\s(.*),\s((.*)\s(.*))\)/
+
+      @infinitive = "#{@as_text}"
+      @third_per_sing_present = $1
+      @third_per_sing_past = $2
+      @auxiliary = $4
+      @past_participle = $5
+
       @as_text = as_text << " " << verb_parts.text
       @as_html = as_html << " " << verb_parts.to_html
     end
-
-    # Verb - infinitive, 3rd per. sing. pres., 3rd per. sing. past, past participle, auxiliary verb
   end
 
   class Sentence
